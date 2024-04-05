@@ -1,24 +1,41 @@
 package com.dera.World.Banking.service.impl;
 
 import com.dera.World.Banking.domain.entities.UserEntity;
+import com.dera.World.Banking.domain.enums.Roles;
+import com.dera.World.Banking.infrastructure.config.JwtTokenProvider;
 import com.dera.World.Banking.payload.request.EmailDetails;
+import com.dera.World.Banking.payload.request.LoginRequest;
 import com.dera.World.Banking.payload.request.UserRequest;
+import com.dera.World.Banking.payload.response.APIResponse;
 import com.dera.World.Banking.payload.response.AccountInfo;
 import com.dera.World.Banking.payload.response.BankResponse;
+import com.dera.World.Banking.payload.response.JwtAuthResponse;
 import com.dera.World.Banking.repository.UserRepository;
 import com.dera.World.Banking.service.AuthService;
 import com.dera.World.Banking.service.EmailService;
 import com.dera.World.Banking.utils.AccountUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final AuthenticationManager authenticationManager;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final PasswordEncoder encoder;
     @Override
     public BankResponse registerUser(UserRequest userRequest) {
         if (userRepository.existsByEmail(userRequest.getEmail())){
@@ -40,11 +57,12 @@ public class AuthServiceImpl implements AuthService {
                 .accountNumber(AccountUtils.generateAccountNumber())
                 .accountBalance(BigDecimal.ZERO)
                 .email(userRequest.getEmail())
-                .password(userRequest.getPassword())
+                .password(encoder.encode(userRequest.getPassword()))
                 .stateOfOrigin(userRequest.getStateOfOrigin())
                 .phoneNumber(userRequest.getPhoneNumber())
                 .alternativePhoneNumber(userRequest.getAlternativePhoneNumber())
                 .status("ACTIVE")
+                .roles(Roles.USER)
                 .profilePicture("https://res.cloudinary.com/dpfqbb9pl/image/upload/v1701260428/maleprofile_ffeep9.png")
                 .build();
 
@@ -71,5 +89,48 @@ public class AuthServiceImpl implements AuthService {
                                 saveUser.getMiddleName())
                         .build())
                 .build();
+    }
+
+    @Override
+    public ResponseEntity<APIResponse<JwtAuthResponse>> login(LoginRequest loginRequest) {
+
+        Optional<UserEntity> userEntityOptional = userRepository.findByEmail(loginRequest.getEmail());
+
+        Authentication authentication = null;
+
+        authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
+        );
+
+        EmailDetails loginAlert = EmailDetails.builder()
+                .subject("You are logged in")
+                .recipient(loginRequest.getEmail())
+                .messageBody("You logged into your account. If you did not initiate this request, contact support desk")
+                .build();
+
+        emailService.sendEmailAlert(loginAlert);
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        String token = jwtTokenProvider.generateToken(authentication);
+
+        UserEntity userEntity = userEntityOptional.get();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(
+                        new APIResponse<>(
+                                "Login Successful",
+                                JwtAuthResponse.builder()
+                                        .accessToken(token)
+                                        .tokenType("Bearer")
+                                        .id(userEntity.getId())
+                                        .email(userEntity.getEmail())
+                                        .gender(userEntity.getGender())
+                                        .firstName(userEntity.getFirstName())
+                                        .lastName(userEntity.getLastName())
+                                        .profilePicture(userEntity.getProfilePicture())
+                                        .role(userEntity.getRoles())
+                                        .build()
+                        )
+                );
     }
 }

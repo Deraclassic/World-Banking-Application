@@ -21,10 +21,17 @@ public class BankResponse<T> {
         this.accountInfo = accountInfo;
     }
 
-    public BankResponse(String responseMessage) {
+    public BankResponse(String message) {
         this.responseMessage = responseMessage;
     }
 
-    public BankResponse(String message, ErrorDetails errorDetails) {
+    public BankResponse(String responseMessage, ErrorDetails errorDetails) {
+        this.responseMessage = responseMessage;
+
     }
+
+    public BankResponse(String message, String fileUrl) {
+        this.responseMessage = message;
+    }
+
 }
